@@ -67,8 +67,9 @@ jobs:
 
       - name: Test application
         run: |
-          NODE_PORT=$(kubectl get svc node-app -o jsonpath='{.spec.ports[0].nodePort}')
-          curl http://localhost:$NODE_PORT
+          kubectl port-forward deployment/node-app 8080:3000 &
+          sleep 5
+          curl http://localhost:8080
 
       - name: Cleanup Kubernetes resources
         run: |
