@@ -1,0 +1,77 @@
+name: Build, Push to ECR, Deploy to ECS
+
+on:
+  push:
+    branches:
+      - main   # change if needed
+
+env:
+  AWS_REGION: us-east-1
+  ECR_PUBLIC_REGISTRY: public.ecr.aws/r2w3u4t4
+  IMAGE_NAME: node-app
+  ECS_CLUSTER: NodeJS
+  ECS_TASK_DEFINITION: nodejs-task
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR Public
+        run: |
+          aws ecr-public get-login-password --region $AWS_REGION \
+          | docker login --username AWS --password-stdin $ECR_PUBLIC_REGISTRY
+
+      - name: Build Docker image
+        run: |
+          docker build -t $IMAGE_NAME .
+
+      - name: Tag Docker image
+        run: |
+          docker tag $IMAGE_NAME:latest $ECR_PUBLIC_REGISTRY/$IMAGE_NAME:latest
+
+      - name: Push Docker image to ECR Public
+        run: |
+          docker push $ECR_PUBLIC_REGISTRY/$IMAGE_NAME:latest
+
+      - name: Deploy to ECS (Run Task)
+        run: |
+          aws ecs run-task \
+            --cluster $ECS_CLUSTER \
+            --task-definition $ECS_TASK_DEFINITION \
+            --region $AWS_REGION
+
+      - name: Slack Notification (Success)
+        if: success()
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "channel": "#node_app",
+              "text": "✅ Docker image build, push, and ECS deployment successful!"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+
+      - name: Slack Notification (Failure)
+        if: failure()
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "channel": "#node_app",
+              "text": "❌ Docker image build, push, or ECS deployment failed!"
+            }
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+    
